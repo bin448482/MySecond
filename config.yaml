@@ -1,0 +1,179 @@
+# 短线选股工具配置文件
+
+# 数据库配置
+database:
+  path: "data/stock_data.db"
+  backup_enabled: true
+  backup_interval: 7  # 天
+
+# 数据获取配置
+data:
+  period: 60  # 历史数据天数
+  update_time: "09:30"  # 每日更新时间
+  retry_times: 3
+  retry_interval: 5  # 秒
+  max_stocks_per_batch: 100  # 每批处理的最大股票数
+  
+  # 东方财富API优化配置
+  delay_config:
+    min_delay: 0.3  # 最小延迟（秒）
+    max_delay: 1.0  # 最大延迟（秒）
+    retry_delay: 2.0  # 重试延迟（秒）
+    segment_days: 30  # 数据分段天数
+  
+  # 数据源优先级配置
+  data_sources:
+    primary: "eastmoney"  # 主要数据源：东方财富
+    fallback: ["simple", "tencent"]  # 备用数据源
+    use_segmentation: true  # 启用数据分段获取
+
+# 筛选条件配置
+filters:
+  # 市场筛选
+  markets: ["上海", "深圳"]  # 只选择A股市场：上海、深圳
+  exclude_markets: ["其他"]  # 排除的市场
+  
+  # 基础筛选
+  price_range: [3, 200]  # 价格区间
+  min_volume_ratio: 1.2  # 最小量比
+  min_turnover_rate: 2.0  # 最小换手率
+  min_price_change: 1.0  # 最小涨幅%
+  max_price_change: 20.0  # 最大涨幅%（避免异常股票）
+  
+  # 市值筛选
+  min_market_cap: 10  # 最小市值（亿元）
+  max_market_cap: 5000  # 最大市值（亿元）
+  
+  # 排除条件
+  exclude_st: true  # 排除ST股票
+  exclude_new_stock: true  # 排除新股（上市不足30天）
+  exclude_suspended: true  # 排除停牌股票
+
+# 技术指标配置
+technical:
+  # MACD参数
+  macd:
+    fast_period: 12
+    slow_period: 26
+    signal_period: 9
+    
+  # RSI参数
+  rsi:
+    period: 14
+    overbought: 70
+    oversold: 30
+    
+  # 均线参数
+  ma_periods: [5, 10, 20, 60]
+  
+  # 量比计算参数
+  volume_ratio:
+    base_period: 5  # 基准期间（天）
+
+# 选股策略配置
+strategy:
+  # 涨幅榜策略
+  price_momentum:
+    enabled: true
+    weight: 0.3
+    lookback_days: 1  # 回看天数
+    
+  # 成交量策略
+  volume_strategy:
+    enabled: true
+    weight: 0.25
+    min_volume_ratio: 1.5
+    
+  # 技术指标策略
+  technical_strategy:
+    enabled: true
+    weight: 0.45
+    
+    # MACD信号权重
+    macd_weight: 0.4
+    # RSI信号权重
+    rsi_weight: 0.3
+    # 均线信号权重
+    ma_weight: 0.3
+
+# 输出配置
+output:
+  max_results: 50  # 最大输出股票数
+  excel_filename: "selected_stocks_{date}.xlsx"
+  include_charts: false
+  output_dir: "output"
+  
+  # Excel格式配置
+  excel_format:
+    # 工作表名称
+    sheets:
+      main: "选股结果"
+      summary: "统计摘要"
+      technical: "技术指标"
+    
+    # 列宽设置
+    column_widths:
+      symbol: 10
+      name: 15
+      price: 12
+      change_pct: 12
+      volume_ratio: 12
+      turnover_rate: 12
+      score: 10
+
+# 日志配置
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file_enabled: true
+  file_path: "logs/stock_selector.log"
+  max_file_size: 10  # MB
+  backup_count: 5
+
+# 性能配置
+performance:
+  # 并发设置
+  max_workers: 4  # 最大并发数
+  
+  # 缓存设置
+  cache_enabled: true
+  cache_duration: 3600  # 缓存时间（秒）
+  
+  # 内存管理
+  batch_size: 50  # 批处理大小
+  memory_limit: 1024  # 内存限制（MB）
+
+# 风险控制
+risk_control:
+  # 数据质量检查
+  data_quality_check: true
+  min_data_points: 20  # 最少数据点数
+  
+  # 异常值检测
+  outlier_detection: true
+  outlier_threshold: 3  # 标准差倍数
+  
+  # 回测验证
+  backtest_enabled: false
+  backtest_days: 30
+
+# 通知配置（可选）
+notification:
+  enabled: false
+  email:
+    smtp_server: ""
+    smtp_port: 587
+    username: ""
+    password: ""
+    recipients: []
+  
+  # 微信通知（可选）
+  wechat:
+    enabled: false
+    webhook_url: ""
+
+# 调试配置
+debug:
+  enabled: false
+  save_intermediate_results: false
+  verbose_logging: false
+  test_mode: false  # 测试模式，只处理少量股票
