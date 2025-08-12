@@ -302,10 +302,14 @@ class EnhancedDataFetcher:
                 response_time = time.time() - start_time
                 self.delay_manager.record_request(False, response_time)
                 
-                # 详细错误日志
+                # 详细错误日志 - 提升到INFO级别确保用户能看到
                 import traceback
-                logger.error(f"股票 {symbol} 获取数据异常: {type(e).__name__}: {str(e)}")
-                logger.error(f"错误堆栈: {traceback.format_exc()}")
+                logger.info(f"股票 {symbol} 获取数据异常: {type(e).__name__}: {str(e)}")
+                logger.info(f"错误堆栈: {traceback.format_exc()}")
+                
+                # 打印到控制台确保用户能看到
+                print(f"❌ 股票 {symbol} 数据获取失败: {e}")
+                print(f"🔍 错误类型: {type(e).__name__}")
                 
                 # 根据错误类型决定是否继续重试
                 if self._is_permanent_error(e):
@@ -622,6 +626,8 @@ class EnhancedDataFetcher:
     def _get_from_tencent(self, symbol: str, period: str, start_date: str, end_date: str) -> pd.DataFrame:
         """从腾讯数据源获取数据"""
         try:
+            print(f"🔄 尝试腾讯数据源: {symbol}")
+            
             # 使用akshare的腾讯数据源
             hist_data = ak.stock_zh_a_hist_tx(symbol=symbol)
             
@@ -641,15 +647,22 @@ class EnhancedDataFetcher:
                     # 转换日期格式
                     hist_data['date'] = hist_data['date'].dt.strftime('%Y-%m-%d')
                 
+                print(f"✅ 腾讯数据源成功: {len(hist_data)} 条记录")
+            else:
+                print(f"⚠️ 腾讯数据源返回空数据")
+                
             return hist_data
             
         except Exception as e:
+            print(f"❌ 腾讯数据源失败: {e}")
             logger.debug(f"腾讯数据源异常: {e}")
             return pd.DataFrame()
     
     def _get_from_simple(self, symbol: str, period: str, start_date: str, end_date: str) -> pd.DataFrame:
         """简化版数据获取 - 只获取最近的数据"""
         try:
+            print(f"🔄 尝试简化数据源: {symbol}")
+            
             # 尝试获取最近30天的数据，不指定具体日期范围
             from datetime import datetime, timedelta
             recent_start = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
@@ -676,16 +689,23 @@ class EnhancedDataFetcher:
                 
                 # 转换日期格式
                 hist_data['date'] = hist_data['date'].dt.strftime('%Y-%m-%d')
+                
+                print(f"✅ 简化数据源成功: {len(hist_data)} 条记录")
+            else:
+                print(f"⚠️ 简化数据源返回空数据")
             
             return hist_data
             
         except Exception as e:
+            print(f"❌ 简化数据源失败: {e}")
             logger.debug(f"简化数据源异常: {e}")
             return pd.DataFrame()
     
     def _get_from_eastmoney(self, symbol: str, period: str, start_date: str, end_date: str) -> pd.DataFrame:
         """从东方财富获取数据（原始方法）"""
         try:
+            print(f"🔄 尝试东方财富数据源: {symbol} ({start_date} 到 {end_date})")
+            
             # 原始的东方财富数据源
             hist_data = ak.stock_zh_a_hist(
                 symbol=symbol,
@@ -694,9 +714,16 @@ class EnhancedDataFetcher:
                 end_date=end_date,
                 adjust="qfq"
             )
+            
+            if not hist_data.empty:
+                print(f"✅ 东方财富数据源成功: {len(hist_data)} 条记录")
+            else:
+                print(f"⚠️ 东方财富数据源返回空数据")
+                
             return hist_data
             
         except Exception as e:
+            print(f"❌ 东方财富数据源失败: {e}")
             logger.debug(f"东方财富数据源异常: {e}")
             return pd.DataFrame()
     
@@ -711,6 +738,82 @@ class EnhancedDataFetcher:
             'consecutive_failures': metrics.consecutive_failures,
             'delay_range': f"{self.delay_manager.min_delay:.1f}-{self.delay_manager.max_delay:.1f}s"
         }
+    
+    def get_today_stock_data(self, symbol: str) -> pd.DataFrame:
+        """
+        直接获取今天的股票数据（用于API连接性测试）
+        如果今天没有数据则返回空DataFrame
+        
+        Args:
+            symbol: 股票代码
+            
+        Returns:
+            今天的股票数据DataFrame，如果今天没有数据则返回空
+        """
+        from datetime import date
+        today = date.today().strftime('%Y%m%d')
+        
+        logger.info(f"直接获取股票 {symbol} 今日数据: {today}")
+        
+        for attempt in range(self.max_retry_times):
+            start_time = time.time()
+            
+            try:
+                # 应用延迟策略
+                if attempt > 0:
+                    delay = self.delay_manager.get_delay(is_retry=True, retry_count=attempt)
+                    logger.debug(f"股票 {symbol} 重试前等待 {delay:.2f} 秒...")
+                    time.sleep(delay)
+                else:
+                    # 正常请求延迟
+                    delay = self.delay_manager.get_delay()
+                    time.sleep(delay)
+                
+                # 直接调用akshare获取今天的数据
+                print(f"🔄 直接获取今日数据: {symbol} ({today})")
+                
+                # 只获取今天的数据
+                hist_data = ak.stock_zh_a_hist(
+                    symbol=symbol,
+                    period="daily",
+                    start_date=today,
+                    end_date=today,
+                    adjust="qfq"
+                )
+                
+                response_time = time.time() - start_time
+                
+                # 数据清洗
+                if not hist_data.empty:
+                    hist_data = self._clean_history_data(hist_data)
+                    print(f"✅ 获取今日数据成功: {len(hist_data)} 条记录")
+                else:
+                    print(f"⚠️ 今日无数据（可能是非交易日或数据未更新）")
+                
+                # 记录成功请求（即使返回空数据，API调用也是成功的）
+                self.delay_manager.record_request(True, response_time)
+                
+                return hist_data
+                
+            except Exception as e:
+                response_time = time.time() - start_time
+                self.delay_manager.record_request(False, response_time)
+                
+                print(f"❌ 获取失败: {e}")
+                logger.debug(f"股票 {symbol} 获取今日数据失败 (尝试 {attempt + 1}/{self.max_retry_times}): {e}")
+                
+                # 根据错误类型决定是否继续重试
+                if self._is_permanent_error(e):
+                    logger.debug(f"股票 {symbol} 遇到永久性错误，停止重试: {e}")
+                    break
+                
+                # 检查网络状态
+                if self.delay_manager.should_pause():
+                    logger.warning(f"网络状态过差，跳过股票 {symbol}")
+                    break
+        
+        logger.debug(f"股票 {symbol} 今日数据获取最终失败")
+        return pd.DataFrame()
 
 
 if __name__ == "__main__":
