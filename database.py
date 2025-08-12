@@ -243,6 +243,58 @@ class DatabaseManager:
         finally:
             conn.close()
     
+    def get_stock_list_exclude_incomplete(self, report_file: str = "data/completeness_report.json") -> pd.DataFrame:
+        """
+        根据完整性报告获取数据完整的股票列表（排除不完整的股票）
+        
+        Args:
+            report_file: 完整性报告文件路径
+        
+        Returns:
+            数据完整的股票列表DataFrame
+        """
+        import json
+        import os
+        
+        try:
+            # 检查报告文件是否存在
+            if not os.path.exists(report_file):
+                logger.warning(f"完整性报告文件不存在: {report_file}，返回所有股票")
+                return self.get_stock_list()
+            
+            # 读取完整性报告
+            with open(report_file, 'r', encoding='utf-8') as f:
+                report = json.load(f)
+            
+            # 获取数据完整的股票代码
+            detailed_results = report.get('detailed_results', {})
+            complete_symbols = []
+            
+            for symbol, stock_data in detailed_results.items():
+                status = stock_data.get('status', '')
+                if status == 'complete':
+                    complete_symbols.append(symbol)
+            
+            if not complete_symbols:
+                logger.warning("报告中没有找到数据完整的股票")
+                return pd.DataFrame()
+            
+            # 从数据库获取这些股票的信息
+            conn = self.get_connection()
+            try:
+                placeholders = ','.join(['?' for _ in complete_symbols])
+                query = f"SELECT * FROM stock_info WHERE symbol IN ({placeholders}) ORDER BY symbol"
+                df = pd.read_sql_query(query, conn, params=complete_symbols)
+                logger.info(f"根据完整性报告获取到 {len(df)} 只数据完整的股票")
+                return df
+            finally:
+                conn.close()
+                
+        except Exception as e:
+            logger.error(f"根据完整性报告获取股票列表失败: {e}")
+            # 出错时返回所有股票
+            return self.get_stock_list()
+    
     def get_stock_data(self, symbol: str, days: int = 60) -> pd.DataFrame:
         """
         获取指定股票的历史数据
