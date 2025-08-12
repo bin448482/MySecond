@@ -12,6 +12,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional, List
 import logging
+import pandas as pd
 
 # 导入自定义模块
 from database import DatabaseManager
@@ -341,6 +342,150 @@ class EnhancedStockSelectorApp:
         print(f"需要恢复的股票数: {recovery_plan['total_to_recover']}")
         print(f"失败股票: {len(failed_symbols)}")
         print(f"暂停股票: {len(paused_symbols)}")
+    def test_api_connectivity(self, test_symbols: List[str] = None):
+        """
+        测试API连接性和数据获取功能
+        
+        Args:
+            test_symbols: 测试用的股票代码列表，如果为None则使用默认测试股票
+        """
+        print("\n" + "="*60)
+        print("API连接性测试")
+        print("="*60)
+        
+        # 默认测试股票代码
+        if not test_symbols:
+            test_symbols = ['000001', '000002', '600000', '600036', '000858']
+        
+        print(f"📡 测试股票代码: {', '.join(test_symbols)}")
+        print(f"🔍 测试项目: 网络连接、数据获取、API响应")
+        
+        results = {
+            'total_tested': len(test_symbols),
+            'success_count': 0,
+            'failed_count': 0,
+            'api_status': 'unknown',
+            'network_status': 'unknown',
+            'test_details': []
+        }
+        
+        try:
+            # 获取网络状态
+            network_status = self.data_fetcher.delay_manager.get_network_status()
+            results['network_status'] = network_status.value
+            print(f"🌐 当前网络状态: {network_status.value}")
+            
+            print("\n开始API测试...")
+            print("-" * 40)
+            
+            for i, symbol in enumerate(test_symbols, 1):
+                print(f"\n[{i}/{len(test_symbols)}] 测试股票: {symbol}")
+                
+                test_detail = {
+                    'symbol': symbol,
+                    'success': False,
+                    'records_count': 0,
+                    'error': None,
+                    'response_time': 0
+                }
+                
+                try:
+                    start_time = time.time()
+                    
+                    # 测试获取最近3天的数据
+                    updated_count = self.data_fetcher.update_stock_data_with_fixed_delay(symbol, days=3)
+                    
+                    response_time = time.time() - start_time
+                    test_detail['response_time'] = response_time
+                    
+                    if updated_count >= 0:  # 0也表示成功（可能已是最新数据）
+                        test_detail['success'] = True
+                        test_detail['records_count'] = updated_count
+                        results['success_count'] += 1
+                        
+                        print(f"  ✅ 成功 - 获取 {updated_count} 条记录 ({response_time:.2f}秒)")
+                        
+                        # 验证数据是否真的存在
+                        latest_data = self.db.get_stock_data(symbol, days=1)
+                        if latest_data is not None and not latest_data.empty:
+                            latest_record = latest_data.iloc[-1]  # 获取最新的记录
+                            latest_date = latest_record['date']
+                            latest_price = latest_record['close']
+                            print(f"  📊 最新数据: {latest_date}, 收盘价: {latest_price}")
+                        else:
+                            print(f"  ⚠️ 警告: API调用成功但数据库中无数据")
+                    else:
+                        test_detail['error'] = "API返回负值"
+                        results['failed_count'] += 1
+                        print(f"  ❌ 失败 - API返回异常值: {updated_count}")
+                        
+                except Exception as e:
+                    test_detail['error'] = str(e)
+                    results['failed_count'] += 1
+                    print(f"  ❌ 失败 - {e}")
+                
+                results['test_details'].append(test_detail)
+                
+                # 短暂延迟避免请求过快
+                time.sleep(1)
+            
+            # 计算API状态
+            success_rate = results['success_count'] / results['total_tested']
+            if success_rate >= 0.8:
+                results['api_status'] = 'good'
+            elif success_rate >= 0.5:
+                results['api_status'] = 'fair'
+            else:
+                results['api_status'] = 'poor'
+            
+            # 显示测试总结
+            print("\n" + "="*60)
+            print("API测试总结")
+            print("="*60)
+            print(f"📊 测试股票数: {results['total_tested']}")
+            print(f"✅ 成功: {results['success_count']}")
+            print(f"❌ 失败: {results['failed_count']}")
+            print(f"📈 成功率: {success_rate:.1%}")
+            print(f"🌐 网络状态: {results['network_status']}")
+            print(f"🔌 API状态: {results['api_status']}")
+            
+            # 显示响应时间统计
+            response_times = [detail['response_time'] for detail in results['test_details'] if detail['success']]
+            if response_times:
+                avg_response_time = sum(response_times) / len(response_times)
+                max_response_time = max(response_times)
+                min_response_time = min(response_times)
+                print(f"⏱️ 平均响应时间: {avg_response_time:.2f}秒")
+                print(f"⏱️ 最快响应: {min_response_time:.2f}秒")
+                print(f"⏱️ 最慢响应: {max_response_time:.2f}秒")
+            
+            # 给出建议
+            print("\n💡 建议:")
+            if results['api_status'] == 'good':
+                print("  ✅ API工作正常，可以进行批量数据更新")
+            elif results['api_status'] == 'fair':
+                print("  ⚠️ API部分正常，建议检查网络连接或稍后重试")
+            else:
+                print("  ❌ API状态不佳，建议检查网络连接和API配置")
+                print("  💡 可以尝试使用企业模式: --enterprise-mode")
+            
+            # 显示失败详情
+            failed_tests = [detail for detail in results['test_details'] if not detail['success']]
+            if failed_tests:
+                print(f"\n❌ 失败详情:")
+                for detail in failed_tests:
+                    print(f"  {detail['symbol']}: {detail['error']}")
+            
+            print("="*60)
+            
+            return results
+            
+        except Exception as e:
+            print(f"❌ API测试过程中发生错误: {e}")
+            import traceback
+            print(f"详细错误: {traceback.format_exc()}")
+            return results
+
 
 
 def create_enhanced_argument_parser():
@@ -354,6 +499,7 @@ def create_enhanced_argument_parser():
   python enhanced_main.py --show-progress                    # 显示进度状态
   python enhanced_main.py --create-recovery-plan             # 创建恢复计划
   python enhanced_main.py --test-network                     # 测试网络状态
+  python enhanced_main.py --test-api                         # 测试API连接性
   python enhanced_main.py --diagnose-network                 # 完整网络诊断
   
 企业网络模式:
@@ -383,6 +529,8 @@ def create_enhanced_argument_parser():
                        help='测试网络状态和延迟策略')
     parser.add_argument('--diagnose-network', action='store_true',
                        help='运行完整的网络诊断')
+    parser.add_argument('--test-api', action='store_true',
+                       help='测试API连接性和数据获取功能')
     parser.add_argument('--enterprise-mode', action='store_true',
                        help='启用企业网络模式（更保守的延迟和重试策略）')
     
@@ -455,6 +603,12 @@ def main():
                 print("❌ 网络诊断模块未找到，请确保 network_diagnostic.py 存在")
             except Exception as e:
                 print(f"❌ 网络诊断失败: {e}")
+            return
+        
+        # API连接性测试
+        if args.test_api:
+            print("🔍 开始API连接性测试...")
+            results = app.test_api_connectivity()
             return
         
         # 增强版批量更新
