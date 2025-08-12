@@ -43,6 +43,53 @@ class DataRefreshManager:
             'incomplete_stocks': [], # 数据不完整的股票
             'complete_stocks': []    # 数据完整的股票
         }
+        # 缓存交易日数据，避免重复查询
+        self._trading_days_cache = {}
+    
+    def get_recent_trading_days(self, target_days: int = 60) -> set:
+        """
+        获取最近N个交易日（从数据库缓存）
+        
+        Args:
+            target_days: 目标天数
+            
+        Returns:
+            交易日期集合
+        """
+        # 检查缓存
+        if target_days in self._trading_days_cache:
+            return self._trading_days_cache[target_days]
+        
+        conn = self.db.get_connection()
+        try:
+            # 从数据库获取实际的交易日期（排除今天因为数据要下午4点后才更新）
+            end_date = datetime.now().date() - timedelta(days=1)  # 从昨天开始计算
+            
+            # 从daily_data表获取最近target_days个实际交易日
+            trading_days_query = """
+                SELECT DISTINCT date
+                FROM daily_data
+                WHERE date <= ?
+                ORDER BY date DESC
+                LIMIT ?
+            """
+            trading_days_df = pd.read_sql_query(trading_days_query, conn, params=(end_date.isoformat(), target_days))
+            
+            if trading_days_df.empty:
+                trading_days_set = set()
+            else:
+                trading_days_df['date'] = pd.to_datetime(trading_days_df['date']).dt.date
+                trading_days_set = set(trading_days_df['date'].tolist())
+            
+            # 缓存结果
+            self._trading_days_cache[target_days] = trading_days_set
+            return trading_days_set
+            
+        except Exception as e:
+            logger.error(f"获取交易日失败: {e}")
+            return set()
+        finally:
+            conn.close()
     
     def backup_database(self) -> str:
         """
@@ -345,16 +392,8 @@ class DataRefreshManager:
             # 找出重复的日期
             duplicate_dates = df[df['count'] > 1]['date'].tolist()
             
-            # 计算目标日期范围（最近60个交易日，排除今天因为数据要下午4点后才更新）
-            end_date = datetime.now().date() - timedelta(days=1)  # 从昨天开始计算
-            start_date = end_date - timedelta(days=target_days + 20)  # 多加20天以确保覆盖60个交易日
-            
-            # 获取理论交易日
-            expected_trading_days = self.get_trading_days(start_date, end_date)
-            
-            # 只取最近的60个交易日
-            expected_trading_days = sorted(expected_trading_days, reverse=True)[:target_days]
-            expected_trading_days_set = set(expected_trading_days)
+            # 获取最近target_days个交易日
+            expected_trading_days_set = self.get_recent_trading_days(target_days)
             
             # 找出缺失的日期
             missing_dates = expected_trading_days_set - actual_dates
@@ -716,23 +755,8 @@ class DataRefreshManager:
                 logger.debug(f"股票 {symbol} 有重复数据: {len(duplicate_dates)} 天")
                 return False
             
-            # 计算目标日期范围（最近60个交易日，排除今天因为数据要下午4点后才更新）
-            end_date = datetime.now().date() - timedelta(days=1)  # 从昨天开始计算
-            start_date = end_date - timedelta(days=days + 20)  # 多加20天以确保覆盖60个交易日
-            
-            # 获取理论交易日（排除周末）
-            expected_trading_days = set()
-            current_date = start_date
-            
-            while current_date <= end_date:
-                # 排除周末（周六=5, 周日=6）
-                if current_date.weekday() < 5:
-                    expected_trading_days.add(current_date)
-                current_date += timedelta(days=1)
-            
-            # 只取最近的60个交易日
-            expected_trading_days = sorted(expected_trading_days, reverse=True)[:days]
-            expected_trading_days_set = set(expected_trading_days)
+            # 获取最近days个交易日
+            expected_trading_days_set = self.get_recent_trading_days(days)
             
             # 找出缺失的日期
             missing_dates = expected_trading_days_set - actual_dates
