@@ -345,8 +345,8 @@ class DataRefreshManager:
             # 找出重复的日期
             duplicate_dates = df[df['count'] > 1]['date'].tolist()
             
-            # 计算目标日期范围（最近60个交易日）
-            end_date = datetime.now().date()
+            # 计算目标日期范围（最近60个交易日，排除今天因为数据要下午4点后才更新）
+            end_date = datetime.now().date() - timedelta(days=1)  # 从昨天开始计算
             start_date = end_date - timedelta(days=target_days + 20)  # 多加20天以确保覆盖60个交易日
             
             # 获取理论交易日
@@ -716,8 +716,8 @@ class DataRefreshManager:
                 logger.debug(f"股票 {symbol} 有重复数据: {len(duplicate_dates)} 天")
                 return False
             
-            # 计算目标日期范围（最近60个交易日）
-            end_date = datetime.now().date()
+            # 计算目标日期范围（最近60个交易日，排除今天因为数据要下午4点后才更新）
+            end_date = datetime.now().date() - timedelta(days=1)  # 从昨天开始计算
             start_date = end_date - timedelta(days=days + 20)  # 多加20天以确保覆盖60个交易日
             
             # 获取理论交易日（排除周末）
