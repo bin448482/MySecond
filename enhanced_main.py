@@ -16,9 +16,6 @@ import logging
 # 导入自定义模块
 from database import DatabaseManager
 from enhanced_data_fetcher import EnhancedDataFetcher, NetworkStatus
-from technical_indicators import TechnicalIndicators
-from stock_selector import StockSelector
-from output_manager import OutputManager
 from utils import config_manager, logger
 
 
@@ -30,9 +27,6 @@ class EnhancedStockSelectorApp:
         self.config = config_manager
         self.db = DatabaseManager()
         self.data_fetcher = EnhancedDataFetcher(self.db, enterprise_mode=enterprise_mode)
-        self.tech_indicators = TechnicalIndicators(self.db)
-        self.stock_selector = StockSelector(self.db)
-        self.output_manager = OutputManager(self.db)
         self.enterprise_mode = enterprise_mode
         
         mode_info = "企业网络模式" if enterprise_mode else "标准模式"

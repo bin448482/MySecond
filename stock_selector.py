@@ -41,7 +41,7 @@ class StockSelector:
         """
         try:
             # 获取股票列表
-            stock_list = self.db.get_stock_list()
+            stock_list = self.db.get_stock_list_exclude_incomplete()
             
             if stock_list.empty:
                 logger.warning("数据库中没有股票列表")
