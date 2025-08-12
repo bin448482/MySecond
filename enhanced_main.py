@@ -342,6 +342,7 @@ class EnhancedStockSelectorApp:
         print(f"需要恢复的股票数: {recovery_plan['total_to_recover']}")
         print(f"失败股票: {len(failed_symbols)}")
         print(f"暂停股票: {len(paused_symbols)}")
+        
     def test_api_connectivity(self, test_symbols: List[str] = None):
         """
         测试API连接性和数据获取功能
@@ -355,7 +356,7 @@ class EnhancedStockSelectorApp:
         
         # 默认测试股票代码
         if not test_symbols:
-            test_symbols = ['000001', '000002', '600000', '600036', '000858']
+            test_symbols = ['000001', '000002']
         
         print(f"📡 测试股票代码: {', '.join(test_symbols)}")
         print(f"🔍 测试项目: 网络连接、数据获取、API响应")
@@ -392,28 +393,42 @@ class EnhancedStockSelectorApp:
                 try:
                     start_time = time.time()
                     
-                    # 测试获取最近3天的数据
-                    updated_count = self.data_fetcher.update_stock_data_with_fixed_delay(symbol, days=3)
+                    # 获取API调用前的最新数据日期
+                    last_date_before = self.db.get_last_update_date(symbol)
+                    
+                    # 测试获取最近1天的数据（尝试获取今天的数据）
+                    updated_count = self.data_fetcher.update_stock_data_with_fixed_delay(symbol, days=1)
                     
                     response_time = time.time() - start_time
                     test_detail['response_time'] = response_time
                     
-                    if updated_count >= 0:  # 0也表示成功（可能已是最新数据）
+                    # 获取API调用后的最新数据日期
+                    last_date_after = self.db.get_last_update_date(symbol)
+                    
+                    if updated_count >= 0:  # API调用成功
                         test_detail['success'] = True
                         test_detail['records_count'] = updated_count
                         results['success_count'] += 1
                         
-                        print(f"  ✅ 成功 - 获取 {updated_count} 条记录 ({response_time:.2f}秒)")
+                        # 分析API调用结果
+                        from datetime import date
+                        today = date.today().isoformat()
                         
-                        # 验证数据是否真的存在
-                        latest_data = self.db.get_stock_data(symbol, days=1)
-                        if latest_data is not None and not latest_data.empty:
-                            latest_record = latest_data.iloc[-1]  # 获取最新的记录
-                            latest_date = latest_record['date']
-                            latest_price = latest_record['close']
-                            print(f"  📊 最新数据: {latest_date}, 收盘价: {latest_price}")
+                        if updated_count > 0:
+                            print(f"  ✅ API成功 - 新增 {updated_count} 条记录 ({response_time:.2f}秒)")
+                            print(f"  📊 数据更新: {last_date_before} → {last_date_after}")
                         else:
-                            print(f"  ⚠️ 警告: API调用成功但数据库中无数据")
+                            print(f"  ✅ API成功 - 无新数据 ({response_time:.2f}秒)")
+                            print(f"  📊 最新数据日期: {last_date_after or '无数据'}")
+                        
+                        # 检查是否有今天的数据
+                        if last_date_after == today:
+                            print(f"  🎯 ✅ 已获取今日数据: {today}")
+                        elif last_date_after:
+                            print(f"  🎯 ⚠️ 最新数据: {last_date_after} (今日: {today})")
+                            print(f"      可能原因: 市场未开盘、数据源未更新或非交易日")
+                        else:
+                            print(f"  🎯 ❌ 数据库中无此股票数据")
                     else:
                         test_detail['error'] = "API返回负值"
                         results['failed_count'] += 1
